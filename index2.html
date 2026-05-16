@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel Admin - Gerenciar Conteúdo</title>
+    <style>
+        :root { --bg:#0f172a; --bg2:#111827; --card:#1f2937; --text:#f8fafc; --text2:#cbd5e1; --accent:#8b5cf6; --success:#10b981; --danger:#ef4444; }
+        *{box-sizing:border-box;margin:0;padding:0}
+        body{font-family:'Segoe UI',sans-serif;background:linear-gradient(135deg,#0f172a,#111827);color:var(--text);min-height:100vh;padding:1.5rem}
+        .container{max-width:1200px;margin:0 auto}
+        .header{margin-bottom:2rem}
+        .header h1{font-size:2rem;margin-bottom:.5rem}
+        .header p{color:var(--text2)}
+        .login-box{background:var(--card);border:1px solid rgba(255,255,255,.08);border-radius:20px;padding:2rem;max-width:400px;margin:2rem auto}
+        .login-box input{width:100%;padding:12px 16px;border-radius:12px;border:1px solid rgba(203,213,225,.12);background:rgba(255,255,255,.04);color:#fff;margin:1rem 0;font-size:1rem}
+        .tabs{display:flex;gap:1rem;margin-bottom:2rem;border-bottom:1px solid rgba(255,255,255,.08)}
+        .tab{padding:12px 20px;cursor:pointer;border-bottom:2px solid transparent;color:var(--text2);transition:all .2s}
+        .tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+        .panel{display:none}
+        .panel.on{display:block}
+        .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(350px,1fr));gap:1.5rem;margin-top:1.5rem}
+        .item{background:var(--card);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:1.5rem;transition:all .2s}
+        .item:hover{border-color:rgba(139,92,246,.4)}
+        .item h3{margin-bottom:.5rem;font-size:1.1rem;color:#fff}
+        .item p{color:var(--text2);font-size:.9rem;line-height:1.5;margin-bottom:1rem}
+        .item-meta{display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap}
+        .meta{font-size:.8rem;background:rgba(139,92,246,.12);color:var(--accent);padding:4px 12px;border-radius:8px}
+        .item-actions{display:flex;gap:.75rem}
+        .btn{padding:10px 16px;border-radius:10px;border:none;cursor:pointer;font-weight:600;font-size:.9rem;transition:all .2s}
+        .btn-danger{background:rgba(239,68,68,.2);color:var(--danger)}
+        .btn-danger:hover{background:rgba(239,68,68,.35)}
+        .btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent));color:#fff}
+        .btn-primary:hover{opacity:.9}
+        .status{margin-top:1rem;padding:12px 16px;border-radius:12px;font-size:.95rem;display:none}
+        .status.show{display:block}
+        .status.ok{background:rgba(16,185,129,.2);color:var(--success);border:1px solid rgba(16,185,129,.3)}
+        .status.er{background:rgba(239,68,68,.2);color:var(--danger);border:1px solid rgba(239,68,68,.3)}
+        .loading{text-align:center;color:var(--text2);padding:2rem}
+        .empty{text-align:center;color:var(--text2);padding:2rem;opacity:.6}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="login-section" class="login-box">
+            <h2 style="text-align:center;margin-bottom:1.5rem">Painel Admin</h2>
+            <input id="admin-pass" type="password" placeholder="Senha de administrador">
+            <button class="btn btn-primary" style="width:100%" onclick="login()">Entrar</button>
+            <div id="login-msg" style="text-align:center;margin-top:1rem;font-size:.9rem"></div>
+        </div>
+
+        <div id="admin-section" style="display:none">
+            <div class="header">
+                <h1>Painel Administrativo</h1>
+                <p>Gerencie scripts, interfaces e executores diretamente do Firebase</p>
+            </div>
+            <div class="tabs">
+                <div class="tab on" onclick="switchTab('scripts')">📜 Scripts</div>
+                <div class="tab" onclick="switchTab('interfaces')">🖥️ Interfaces</div>
+                <div class="tab" onclick="switchTab('executors')">⚡ Executores</div>
+            </div>
+            <div id="panel-scripts" class="panel on">
+                <div id="scripts-list"></div>
+            </div>
+            <div id="panel-interfaces" class="panel">
+                <div id="interfaces-list"></div>
+            </div>
+            <div id="panel-executors" class="panel">
+                <div id="executors-list"></div>
+            </div>
+            <button class="btn btn-primary" style="margin-top:2rem;padding:12px 30px" onclick="logout()">Sair do Painel</button>
+            <div id="action-status" class="status"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getFirestore, collection, getDocs, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCJBmHKRpMXDUz5mt6L6Fb2q76XprLojA4",
+            authDomain: "tux-script.firebaseapp.com",
+            databaseURL: "https://tux-script-default-rtdb.firebaseio.com",
+            projectId: "tux-script",
+            storageBucket: "tux-script.firebasestorage.app",
+            messagingSenderId: "590964299820",
+            appId: "1:590964299820:web:4281e97e4d142813951989",
+            measurementId: "G-XR1T57GF82"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        let isAuthenticated = false;
+
+        window.login = function() {
+            const pass = document.getElementById('admin-pass').value;
+            const msg = document.getElementById('login-msg');
+            if (pass === 'bocate123') {
+                isAuthenticated = true;
+                document.getElementById('login-section').style.display = 'none';
+                document.getElementById('admin-section').style.display = 'block';
+                loadScripts();
+                document.getElementById('admin-pass').value = '';
+            } else {
+                msg.textContent = '❌ Senha incorreta';
+                msg.style.color = 'var(--danger)';
+            }
+        };
+
+        window.logout = function() {
+            isAuthenticated = false;
+            document.getElementById('admin-section').style.display = 'none';
+            document.getElementById('login-section').style.display = 'block';
+            document.getElementById('admin-pass').value = '';
+            document.getElementById('login-msg').textContent = '';
+        };
+
+        window.switchTab = function(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('on'));
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('on'));
+            event.target.classList.add('on');
+            document.getElementById('panel-'+tab).classList.add('on');
+            if (tab === 'scripts') loadScripts();
+            else if (tab === 'interfaces') loadInterfaces();
+            else if (tab === 'executors') loadExecutors();
+        };
+
+        async function loadScripts() {
+            const list = document.getElementById('scripts-list');
+            list.innerHTML = '<div class="loading">Carregando scripts...</div>';
+            try {
+                const docs = await getDocs(collection(db, 'scripts'));
+                if (docs.empty) {
+                    list.innerHTML = '<div class="empty">Nenhum script encontrado</div>';
+                    return;
+                }
+                let html = '<div class="grid">';
+                docs.forEach(doc => {
+                    const data = doc.data();
+                    html += `
+                        <div class="item">
+                            <h3>${data.title || 'Sem título'}</h3>
+                            <p>${data.description || 'Sem descrição'}</p>
+                            <div class="item-meta">
+                                <span class="meta">🎮 ${data.game || 'Universal'}</span>
+                                <span class="meta">👤 ${data.author || 'Anônimo'}</span>
+                            </div>
+                            <div class="item-actions">
+                                <button class="btn btn-danger" onclick="deleteItem('scripts','${doc.id}')">🗑️ Deletar</button>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                list.innerHTML = html;
+            } catch(e) {
+                list.innerHTML = '<div class="empty">Erro ao carregar: ' + e.message + '</div>';
+            }
+        }
+
+        async function loadInterfaces() {
+            const list = document.getElementById('interfaces-list');
+            list.innerHTML = '<div class="loading">Carregando interfaces...</div>';
+            try {
+                const docs = await getDocs(collection(db, 'interfaces'));
+                if (docs.empty) {
+                    list.innerHTML = '<div class="empty">Nenhuma interface encontrada</div>';
+                    return;
+                }
+                let html = '<div class="grid">';
+                docs.forEach(doc => {
+                    const data = doc.data();
+                    html += `
+                        <div class="item">
+                            <h3>${data.name || 'Sem nome'}</h3>
+                            <p>${data.description || 'Sem descrição'}</p>
+                            <div class="item-meta">
+                                <span class="meta">⭐ ${data.rating || 5}/5</span>
+                                <span class="meta">📦 v${data.version || '1.0'}</span>
+                            </div>
+                            <div class="item-actions">
+                                <button class="btn btn-danger" onclick="deleteItem('interfaces','${doc.id}')">🗑️ Deletar</button>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                list.innerHTML = html;
+            } catch(e) {
+                list.innerHTML = '<div class="empty">Erro ao carregar: ' + e.message + '</div>';
+            }
+        }
+
+        async function loadExecutors() {
+            const list = document.getElementById('executors-list');
+            list.innerHTML = '<div class="loading">Carregando executores...</div>';
+            try {
+                const docs = await getDocs(collection(db, 'executors'));
+                if (docs.empty) {
+                    list.innerHTML = '<div class="empty">Nenhum executor encontrado</div>';
+                    return;
+                }
+                let html = '<div class="grid">';
+                docs.forEach(doc => {
+                    const data = doc.data();
+                    html += `
+                        <div class="item">
+                            <h3>${data.name || 'Sem nome'}</h3>
+                            <p>${data.description || 'Sem descrição'}</p>
+                            <div class="item-meta">
+                                <span class="meta">${data.status === 'detected' ? '❌ Detectado' : '✅ Ativo'}</span>
+                                <span class="meta">v${data.version || '1.0'}</span>
+                            </div>
+                            <div class="item-actions">
+                                <button class="btn btn-danger" onclick="deleteItem('executors','${doc.id}')">🗑️ Deletar</button>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+                list.innerHTML = html;
+            } catch(e) {
+                list.innerHTML = '<div class="empty">Erro ao carregar: ' + e.message + '</div>';
+            }
+        }
+
+        window.deleteItem = async function(collection_name, doc_id) {
+            if (!confirm('Tem certeza que deseja deletar? Esta ação não pode ser desfeita.')) return;
+            const status = document.getElementById('action-status');
+            try {
+                await deleteDoc(doc(db, collection_name, doc_id));
+                status.textContent = '✅ Item deletado com sucesso';
+                status.className = 'status show ok';
+                setTimeout(() => {
+                    if (collection_name === 'scripts') loadScripts();
+                    else if (collection_name === 'interfaces') loadInterfaces();
+                    else if (collection_name === 'executors') loadExecutors();
+                }, 500);
+                setTimeout(() => status.classList.remove('show'), 3000);
+            } catch(e) {
+                status.textContent = '❌ Erro ao deletar: ' + e.message;
+                status.className = 'status show er';
+                setTimeout(() => status.classList.remove('show'), 3000);
+            }
+        };
+
+        document.getElementById('admin-pass').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') window.login();
+        });
+    </script>
+</body>
+</html>
